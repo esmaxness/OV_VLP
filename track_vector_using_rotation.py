@@ -20,10 +20,10 @@ class VisualOdometry:
         
         # Posición y orientación actual del AGV
         self.current_position = (30,35.5)  # [x, y, z]
-        # Ajustar la orientación inicial para que sea perpendicular al eje X
-        self.current_rotation = np.array([[0, -1], [1, 0]])  # 90 grados
-        self.current_yaw = 0  # 90 grados en radianes
-        self.last_rotation_delta =0.0
+        # Inicializar con rotación de 0 grados (sin rotación)
+        self.current_rotation = np.array([[1, 0], [0, 1]])  # 0 grados (matriz identidad)
+        self.current_yaw = 0  # 0 grados en radianes
+        self.last_rotation_delta = 0.0
         
         # Histórico de posiciones detectadas para cada baliza
         self.beacon_pixel_history = {}
