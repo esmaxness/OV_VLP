@@ -167,10 +167,8 @@ class VisualOdometry:
     def estimate_rotation_from_multiple_beacons(self, beacon_detections):
         """
         Estima la rotación en el plano Z usando múltiples balizas.
-        
         Args:
             beacon_detections: Diccionario {id_baliza: posición_píxel} de las balizas detectadas
-            
         Returns:
             float: Ángulo de rotación estimado en radianes, None si no se puede estimar
         """
@@ -225,6 +223,7 @@ class VisualOdometry:
         
         if rotation_estimates:
             # Usar la mediana para mayor robustez ante valores atípicos
+            print(f"len(rotation_estimates): {len(rotation_estimates)}")
             return np.median(rotation_estimates)
         
         return None
@@ -271,10 +270,8 @@ class VisualOdometry:
     def process_multiple_beacons(self, beacon_detections):
         """
         Procesa múltiples detecciones de balizas y combina sus estimaciones.
-        
         Args:
             beacon_detections: Diccionario {id_baliza: posición_píxel} de las balizas detectadas
-            
         Returns:
             bool: True si se pudo actualizar la posición, False en caso contrario
         """
@@ -333,8 +330,6 @@ class VisualOdometry:
     def update_position(self, beacon_detections):
         """
         Actualiza la posición del AGV con las nuevas detecciones.
-        Combina odometría visual y PnP según disponibilidad.
-        
         Args:
             beacon_detections: Diccionario {id_baliza: posición_píxel} de las balizas detectadas
             
@@ -342,7 +337,7 @@ class VisualOdometry:
             Posición actualizada [x, y, z]
         """
         
-        # Si hay menos de 4 balizas, usar odometría visual
+        # Si hay balizas, usar odometría visual
         if beacon_detections:
             if self.process_multiple_beacons(beacon_detections):
                 
