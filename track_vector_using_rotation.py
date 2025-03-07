@@ -3,6 +3,8 @@ import cv2
 from scipy.spatial.transform import Rotation
 import math
 import matplotlib.pyplot as plt
+import csv
+import os
 
 class VisualOdometry:
     def __init__(self, camera_matrix, dist_coeffs, beacon_world_positions):
@@ -28,6 +30,12 @@ class VisualOdometry:
         # Histórico de posiciones detectadas para cada baliza
         self.beacon_pixel_history = {}
         
+        # Histórico de deltas (vectores de desplazamiento) para cada baliza
+        self.deltas_history = {}
+        
+        # Histórico de deltas (vectores de desplazamiento) para cada baliza
+        self.summary_deltas_history_rotated = {}
+
         # Último frame en que se vio cada baliza
         self.last_frame_seen = {}
         
@@ -36,6 +44,7 @@ class VisualOdometry:
         
         # Histórico de posiciones de la cámara
         self.position_history = [(30, 35.5)]  # Inicializar con la posición inicial
+
 
     # Calcular el desplazamiento en el mundo real
     def calculate_displacement(self, delta_x, delta_y, fx, fy, height):
@@ -64,7 +73,7 @@ class VisualOdometry:
         print(f"Delta píxeles: ({delta_x}, {delta_y})")
         print(f"Delta mundo cámara: {vector_camara}")
         #print(f"Delta mundo rotado: {vector_mundo}")
-        print(f"Ángulo actual: {np.degrees(self.current_yaw):.2f} grados")
+        #print(f"Ángulo actual: {np.degrees(self.current_yaw):.2f} grados")
     
         return (delta_X, delta_Y)
     
@@ -95,15 +104,15 @@ class VisualOdometry:
         current_position = self.current_position
         
         # Aplicar el desplazamiento directamente ya que ya está en coordenadas del mundo
-        print(f"Delta_X en el mundo real:{deltas[0]}")
-        print(f"Delta_Y en el mundo real:{deltas[1]}")
+        #print(f"Delta_X en el mundo real:{deltas[0]}")
+        #print(f"Delta_Y en el mundo real:{deltas[1]}")
 
         if abs(self.current_yaw) > np.radians(190):
             deltas[1] = -deltas[1]
             #deltas[0] = -deltas[0]
-            print("Invirtiendo signo del componente Y debido a rotación > 190 grados")
-            print(f"Delta_Y en el mundo real invertido:{deltas[1]}")
-            print(f"Delta_X en el mundo real invertido:{deltas[0]}")
+            #print("Invirtiendo signo del componente Y debido a rotación > 190 grados")
+            #print(f"Delta_Y en el mundo real invertido:{deltas[1]}")
+            #print(f"Delta_X en el mundo real invertido:{deltas[0]}")
 
 
         new_position_x = current_position[0] + deltas[0]
@@ -215,7 +224,7 @@ class VisualOdometry:
                         cross_product = np.cross(np.append(prev_vec, 0), np.append(curr_vec, 0))[2]
                         
                         angle = np.arccos(dot_product)
-                        print(f"dot_product: {dot_product}, cross_product: {cross_product}, angle: {angle}")
+                        #print(f"dot_product: {dot_product}, cross_product: {cross_product}, angle: {angle}")
                         if cross_product < 0:
                             angle = -angle
                         
@@ -223,7 +232,6 @@ class VisualOdometry:
         
         if rotation_estimates:
             # Usar la mediana para mayor robustez ante valores atípicos
-            print(f"len(rotation_estimates): {len(rotation_estimates)}")
             return np.median(rotation_estimates)
         
         return None
@@ -264,7 +272,7 @@ class VisualOdometry:
         #prev_ray = previous['ray_direction']
         #curr_ray = current['ray_direction']
         deltas = self.calculate_vector_movement(previous['pixel_pos'], current['pixel_pos'])
-
+        
         return deltas
     
     def process_multiple_beacons(self, beacon_detections):
@@ -295,8 +303,20 @@ class VisualOdometry:
             if deltas is not None:
                 # Corregir el desplazamiento con la última rotación estimada
                 deltas_rotados = self.current_rotation @ deltas
+                
+                # Guardar los deltas rotados en el historial
+                if beacon_id not in self.deltas_history:
+                    self.deltas_history[beacon_id] = []
+                
+                # Guardar los deltas rotados junto con el frame actual
+                self.deltas_history[beacon_id].append({
+                    'deltas_rotados': deltas_rotados
+                })
+                print(f"Deltas rotados: {deltas_rotados}, baliza: {beacon_id}")
+
+                
                 posicion_estimada = self.estimacion_real_position(deltas_rotados)
-                print(f"Posición Estimada con la baliza {beacon_id}: {posicion_estimada}")
+                #print(f"Posición Estimada con la baliza {beacon_id}: {posicion_estimada}")
                 position_updates.append(posicion_estimada)
 
         if position_updates:
@@ -348,7 +368,7 @@ class VisualOdometry:
 
     def plot_trajectory(self):
         """
-        Grafica la trayectoria seguida por la cámara, incluyendo el ground truth y la trayectoria estimada por SolvePnP.
+        Grafica la trayectoria seguida por la cámara, mostrando solo los puntos de ground truth y las posiciones estimadas.
         """
         # Convertir el histórico de posiciones a arrays numpy
         positions = np.array(self.position_history)
@@ -359,39 +379,15 @@ class VisualOdometry:
             [59, 148.6], [88.5, 157.2], [118.95, 149.55], [140.6, 128.05],
             [149, 97.3], [149, 67.4], [148.65, 37.3], [148.4, 7.4], [148.5, -22.6]
         ])
-        
-        # Definir los puntos estimados por SolvePnP
-        solvepnp_estimates = np.array([
-            [29.5589, 36.5388], [29.1842, 64.15], [24.5287, 95.63], [32.8462, 99.6244],
-            [60.1789, 133.368], [93.5007, 153.013], [121.342, 144.501], [140.195, 123.361],
-            [148, 95.34], [146.988, 66], [146.017, 37.6203], [144.009, 7.12188], [143.069, -22.4631]
-        ])
+
         
         plt.figure(figsize=(10, 8))
         
-        # Graficar la trayectoria completa
-        plt.plot(positions[:, 0], positions[:, 1], 'b-', label='Trayectoria estimada')
-        
-        # Graficar todos los puntos intermedios en azul
-        plt.scatter(positions[1:-1, 0], positions[1:-1, 1], color='blue', s=50, alpha=0.5, label='Puntos intermedios')
-        
-        # Marcar el punto inicial y final
-        # plt.plot(positions[0, 0], positions[0, 1], 'bo', label='Inicio', markersize=10)
-        # plt.plot(positions[-1, 0], positions[-1, 1], 'bo', label='Fin', markersize=10)
-        
-        # Añadir flechas para mostrar la dirección del movimiento
-        for i in range(len(positions)-1):
-            dx = positions[i+1, 0] - positions[i, 0]
-            dy = positions[i+1, 1] - positions[i, 1]
-            plt.arrow(positions[i, 0], positions[i, 1], dx*0.2, dy*0.2,
-                     head_width=0.5, head_length=0.8, fc='blue', ec='blue', alpha=0.5)
+        # Graficar los puntos estimados
+        plt.scatter(positions[:, 0], positions[:, 1], color='blue', s=50, label='Posiciones estimadas')
         
         # Graficar el ground truth
         plt.scatter(ground_truth[:, 0], ground_truth[:, 1], color='red', s=50, label='Ground Truth')
-        
-        # Graficar la trayectoria estimada por SolvePnP
-        plt.plot(solvepnp_estimates[:, 0], solvepnp_estimates[:, 1], 'g-', label='Trayectoria SolvePnP')
-        plt.scatter(solvepnp_estimates[:, 0], solvepnp_estimates[:, 1], color='green', s=50, label='Puntos SolvePnP')
         
         # Configurar el gráfico
         plt.grid(True)
@@ -425,6 +421,419 @@ class VisualOdometry:
         plt.axis('equal')
         plt.show()
 
+    def plot_deltas_history(self):
+        """
+        Grafica el historial de deltas (vectores de desplazamiento) para cada baliza.
+        """
+        if not self.deltas_history:
+            print("No hay historial de deltas para graficar.")
+            return
+        
+        # Crear una figura con dos subplots: uno para deltas originales y otro para deltas rotados
+        fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(14, 10))
+        
+        # Colores para cada baliza
+        colors = {'b5': 'blue', 'b6': 'green'}
+        
+        # Graficar deltas originales y rotados para cada baliza
+        for beacon_id, history in self.deltas_history.items():
+            if not history:
+                continue
+            
+            frames = [entry['frame'] for entry in history]
+            deltas_x = [entry['deltas'][0] for entry in history]
+            deltas_y = [entry['deltas'][1] for entry in history]
+            deltas_rotados_x = [entry['deltas_rotados'][0] for entry in history]
+            deltas_rotados_y = [entry['deltas_rotados'][1] for entry in history]
+            
+            # Graficar deltas X originales
+            ax1.plot(frames, deltas_x, 'o-', color=colors.get(beacon_id, 'gray'), label=f'{beacon_id} - Delta X')
+            
+            # Graficar deltas Y originales
+            ax2.plot(frames, deltas_y, 'o-', color=colors.get(beacon_id, 'gray'), label=f'{beacon_id} - Delta Y')
+            
+            # Graficar deltas X rotados
+            ax3.plot(frames, deltas_rotados_x, 'o-', color=colors.get(beacon_id, 'gray'), label=f'{beacon_id} - Delta X Rotado')
+            
+            # Graficar deltas Y rotados
+            ax4.plot(frames, deltas_rotados_y, 'o-', color=colors.get(beacon_id, 'gray'), label=f'{beacon_id} - Delta Y Rotado')
+        
+        # Configurar los gráficos
+        ax1.set_title('Deltas X Originales')
+        ax1.set_ylabel('Delta X (metros)')
+        ax1.grid(True)
+        ax1.legend()
+        
+        ax2.set_title('Deltas Y Originales')
+        ax2.set_ylabel('Delta Y (metros)')
+        ax2.grid(True)
+        ax2.legend()
+        
+        ax3.set_title('Deltas X Rotados')
+        ax3.set_xlabel('Frame')
+        ax3.set_ylabel('Delta X Rotado (metros)')
+        ax3.grid(True)
+        ax3.legend()
+        
+        ax4.set_title('Deltas Y Rotados')
+        ax4.set_xlabel('Frame')
+        ax4.set_ylabel('Delta Y Rotado (metros)')
+        ax4.grid(True)
+        ax4.legend()
+        
+        plt.tight_layout()
+        plt.show()
+        
+        # Graficar magnitud de los vectores
+        plt.figure(figsize=(10, 6))
+        
+        for beacon_id, history in self.deltas_history.items():
+            if not history:
+                continue
+            
+            frames = [entry['frame'] for entry in history]
+            magnitudes_orig = [np.linalg.norm(entry['deltas']) for entry in history]
+            magnitudes_rot = [np.linalg.norm(entry['deltas_rotados']) for entry in history]
+            
+            plt.plot(frames, magnitudes_orig, 'o-', color=colors.get(beacon_id, 'gray'), 
+                    label=f'{beacon_id} - Magnitud Original')
+            plt.plot(frames, magnitudes_rot, 's--', color=colors.get(beacon_id, 'gray'), 
+                    label=f'{beacon_id} - Magnitud Rotada')
+        
+        plt.title('Magnitud de los Vectores de Desplazamiento')
+        plt.xlabel('Frame')
+        plt.ylabel('Magnitud (metros)')
+        plt.grid(True)
+        plt.legend()
+        plt.show()
+        
+        # Graficar vectores en el plano XY
+        plt.figure(figsize=(10, 8))
+        
+        for beacon_id, history in self.deltas_history.items():
+            if not history:
+                continue
+            
+            # Graficar los vectores originales y rotados
+            for entry in history:
+                dx, dy = entry['deltas']
+                dx_rot, dy_rot = entry['deltas_rotados']
+                frame = entry['frame']
+                
+                # Vectores originales
+                plt.arrow(frame - 0.2, 0, 0, dx, head_width=0.2, head_length=0.3, 
+                         fc=colors.get(beacon_id, 'gray'), ec=colors.get(beacon_id, 'gray'), 
+                         label=f'{beacon_id} - Frame {frame} (X)')
+                plt.arrow(frame, 0, 0, dy, head_width=0.2, head_length=0.3, 
+                         fc='lightgray', ec='lightgray', 
+                         label=f'{beacon_id} - Frame {frame} (Y)')
+                
+                # Vectores rotados
+                plt.arrow(frame + 0.2, 0, 0, dx_rot, head_width=0.2, head_length=0.3, 
+                         fc='red', ec='red', 
+                         label=f'{beacon_id} - Frame {frame} (X Rotado)')
+                plt.arrow(frame + 0.4, 0, 0, dy_rot, head_width=0.2, head_length=0.3, 
+                         fc='orange', ec='orange', 
+                         label=f'{beacon_id} - Frame {frame} (Y Rotado)')
+        
+        plt.title('Vectores de Desplazamiento por Frame')
+        plt.xlabel('Frame')
+        plt.ylabel('Magnitud del Desplazamiento (metros)')
+        plt.grid(True)
+        plt.axhline(y=0, color='black', linestyle='-', alpha=0.3)
+        plt.show()
+
+def save_detections_to_csv(detections, filename="detections.csv"):
+    """
+    Guarda las detecciones en un archivo CSV.
+    
+    Args:
+        detections: Diccionario de detecciones por frame
+        filename: Nombre del archivo CSV donde guardar las detecciones
+    """
+    with open(filename, 'w', newline='') as csvfile:
+        fieldnames = ['frame', 'beacon_id', 'pixel_x', 'pixel_y']
+        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+        
+        writer.writeheader()
+        for frame, beacons in detections.items():
+            for beacon_id, pixel_pos in beacons.items():
+                writer.writerow({
+                    'frame': frame,
+                    'beacon_id': beacon_id,
+                    'pixel_x': pixel_pos[0],
+                    'pixel_y': pixel_pos[1]
+                })
+    
+    print(f"Detecciones guardadas en {filename}")
+
+def load_detections_from_csv(filename="detections.csv"):
+    """
+    Carga las detecciones desde un archivo CSV.
+    
+    Args:
+        filename: Nombre del archivo CSV desde donde cargar las detecciones
+        
+    Returns:
+        Diccionario de detecciones por frame
+    """
+    detections = {}
+    
+    if not os.path.exists(filename):
+        print(f"El archivo {filename} no existe.")
+        return detections
+    
+    with open(filename, 'r', newline='') as csvfile:
+        reader = csv.DictReader(csvfile)
+        for row in reader:
+            frame = int(row['frame'])
+            beacon_id = row['beacon_id']
+            pixel_x = float(row['pixel_x'])
+            pixel_y = float(row['pixel_y'])
+            
+            if frame not in detections:
+                detections[frame] = {}
+            
+            detections[frame][beacon_id] = np.array([pixel_x, pixel_y])
+    
+    print(f"Detecciones cargadas desde {filename}")
+    return detections
+
+def process_static_displacement(ground_truth, vo, beacon_positions):
+    """
+    Procesa el desplazamiento estático y calcula el error respecto al ground truth.
+    Para cada frame, promedia los deltas rotados de todas las balizas y suma este promedio
+    al ground truth del frame anterior para obtener la posición estimada.
+    
+    Args:
+        ground_truth: Array numpy con las posiciones de ground truth
+        vo: Objeto VisualOdometry con los resultados procesados
+        beacon_positions: Diccionario con las posiciones de las balizas
+        
+    Returns:
+        errors: Lista de errores entre las posiciones estimadas y el ground truth
+        positions: Lista de posiciones estimadas
+    """
+    if not vo.deltas_history:
+        print("No hay historial de deltas para procesar.")
+        return [], []
+    
+    # Inicializar diccionarios para almacenar errores y posiciones por baliza
+    errors = {}
+    positions = {}
+    beacon_ids = list(vo.deltas_history.keys())
+
+    # Inicializar listas para cada baliza
+    for beacon_id in beacon_ids:
+        errors[beacon_id] = []
+        positions[beacon_id] = []  # Comenzar con la primera posición del ground truth
+    
+    for beacon_id in beacon_ids:
+        print(f"Beacon ID: {beacon_id}")
+        
+        for i, entry in enumerate(vo.deltas_history[beacon_id]):
+            print(f"Frame: {i+1}")
+            current_position = ground_truth[i].copy()  # Comenzar desde la primera posición del ground truth
+            print(f"Current position: {current_position}")
+            # Obtener los deltas rotados para esta baliza
+            deltas_rotados = entry['deltas_rotados']
+            print(f"Deltas rotados: {deltas_rotados}")
+            # Actualizar la posición sumando los deltas rotados
+            estimate_position = current_position + deltas_rotados
+            print(f"Estimate position: {estimate_position}")
+            positions[beacon_id].append(estimate_position.copy())
+            
+            # Calcular el error respecto al ground truth si está disponible
+            if i + 1 < len(ground_truth):
+                error = np.linalg.norm(estimate_position - ground_truth[i+1])
+                errors[beacon_id].append(error)
+                print(f"Baliza {beacon_id}, Frame {i + 1}:")
+                print(f"  Deltas rotados: {deltas_rotados}")
+                print(f"  Posición estimada: [{estimate_position[0]:.2f}, {estimate_position[1]:.2f}] cm")
+                print(f"  Ground truth: [{ground_truth[i+1][0]:.2f}, {ground_truth[i+1][1]:.2f}] cm")
+                print(f"  Error: {error:.2f} cm")
+    
+    # Calcular estadísticas por baliza
+    for beacon_id in beacon_ids:
+        if errors[beacon_id]:
+            avg_error = np.mean(errors[beacon_id])
+            max_error = np.max(errors[beacon_id])
+            min_error = np.min(errors[beacon_id])
+            print(f"\nEstadísticas para baliza {beacon_id}:")
+            print(f"  Error promedio: {avg_error:.2f} cm")
+            print(f"  Error máximo: {max_error:.2f} cm")
+            print(f"  Error mínimo: {min_error:.2f} cm")
+    
+    return errors, positions
+
+def process_detections_from_csv(csv_filename, camera_matrix, dist_coeffs, beacon_positions, ground_truth):
+    """
+    Procesa las detecciones desde un archivo CSV y devuelve los resultados.
+    
+    Args:
+        csv_filename: Nombre del archivo CSV con las detecciones
+        camera_matrix: Matriz de calibración de la cámara
+        dist_coeffs: Coeficientes de distorsión
+        beacon_positions: Posiciones 3D de las balizas
+        ground_truth: Array numpy con las posiciones de ground truth
+        
+    Returns:
+        vo: Objeto VisualOdometry con los resultados procesados
+        loaded_detections: Detecciones cargadas desde el CSV
+    """
+    # Cargar detecciones desde archivo CSV
+    loaded_detections = load_detections_from_csv(csv_filename)
+    
+    if not loaded_detections:
+        print(f"No se pudieron cargar detecciones desde {csv_filename}")
+        return None, None
+    
+    # Crear sistema de odometría visual
+    vo = VisualOdometry(camera_matrix, dist_coeffs, beacon_positions)
+    
+    # Procesar las detecciones cargadas desde el CSV
+    for frame, beacons in loaded_detections.items():
+        print(f"\nProcesando Frame {frame} desde {csv_filename}:")
+        print("-" * 50)
+        position = vo.update_position(beacons)
+        print(f"Posición estimada: {position} cm")
+        print(f"Orientación (grados): {np.degrees(vo.current_yaw):.2f}")
+        print(f"Balizas visibles: {list(beacons.keys())}")
+        print("-" * 50)
+    
+    # Procesar desplazamiento estático usando ground truth
+    print("\nProcesando desplazamiento estático usando ground truth...")
+    errors, static_positions = process_static_displacement(ground_truth, vo, beacon_positions)
+    
+    # Calcular estadísticas de error
+    if errors:
+        for beacon_id in errors:
+            if errors[beacon_id]:
+                avg_error = np.mean(errors[beacon_id])
+                max_error = np.max(errors[beacon_id])
+                min_error = np.min(errors[beacon_id])
+                print(f"\nEstadísticas para baliza {beacon_id}:")
+                print(f"Error promedio: {avg_error:.2f} cm")
+                print(f"Error máximo: {max_error:.2f} cm")
+                print(f"Error mínimo: {min_error:.2f} cm")
+    
+    # Visualizar resultados del desplazamiento estático
+    if static_positions:
+        plt.figure(figsize=(10, 8))
+        
+        # Graficar posiciones para cada baliza
+        for beacon_id in static_positions:
+            positions_array = np.array(static_positions[beacon_id])
+            plt.scatter(positions_array[:, 0], positions_array[:, 1], s=50, alpha=0.5,
+                       label=f'Posiciones estáticas - Baliza {beacon_id}')
+        
+        # Graficar posiciones estimadas por el sistema de odometría visual
+        positions_array = np.array(vo.position_history)
+        plt.scatter(positions_array[:, 0], positions_array[:, 1], color='blue', s=50, 
+                   label='Posiciones estimadas por odometría visual')
+        
+        # Graficar ground truth
+        plt.scatter(ground_truth[:, 0], ground_truth[:, 1], color='red', s=50, 
+                   label='Ground Truth')
+        
+        # Configurar el gráfico
+        plt.grid(True)
+        plt.xlabel('X (cm)')
+        plt.ylabel('Y (cm)')
+        plt.title(f'Comparación de Trayectorias - {csv_filename}')
+        plt.legend()
+        plt.axis('equal')
+        plt.show()
+    
+    return vo, loaded_detections
+
+
+
+    
+
+def compare_results(vo1, vo2, filename1, filename2, ground_truth):
+    """
+    Compara los resultados de dos procesamientos diferentes.
+    
+    Args:
+        vo1: Primer objeto VisualOdometry
+        vo2: Segundo objeto VisualOdometry
+        filename1: Nombre del primer archivo CSV
+        filename2: Nombre del segundo archivo CSV
+    """
+    if vo1 is None or vo2 is None:
+        print("No se pueden comparar los resultados porque al menos uno de los archivos no pudo ser procesado.")
+        return
+    
+    # Convertir históricos de posiciones a arrays numpy
+    positions1 = np.array(vo1.position_history)
+    positions2 = np.array(vo2.position_history)
+    
+
+    
+    # Calcular errores respecto al ground truth
+    # Asumimos que el número de posiciones puede ser diferente al ground truth
+    # así que calculamos el error para las posiciones disponibles
+    errors1 = []
+    errors2 = []
+    
+    min_len = min(len(positions1), len(positions2), len(ground_truth))
+    
+    for i in range(min_len):
+        error1 = np.linalg.norm(positions1[i] - ground_truth[i])
+        error2 = np.linalg.norm(positions2[i] - ground_truth[i])
+        errors1.append(error1)
+        errors2.append(error2)
+    
+    # Calcular estadísticas
+    avg_error1 = np.mean(errors1)
+    avg_error2 = np.mean(errors2)
+    max_error1 = np.max(errors1)
+    max_error2 = np.max(errors2)
+    
+    # Mostrar comparación
+    print("\n" + "=" * 50)
+    print(f"COMPARACIÓN DE RESULTADOS")
+    print("=" * 50)
+    print(f"Archivo 1: {filename1}")
+    print(f"Archivo 2: {filename2}")
+    print("-" * 50)
+    print(f"Posiciones estimadas en archivo 1: {len(positions1)}")
+    print(f"Posiciones estimadas en archivo 2: {len(positions2)}")
+    print("-" * 50)
+    print(f"Error promedio en archivo 1: {avg_error1:.2f} metros")
+    print(f"Error promedio en archivo 2: {avg_error2:.2f} metros")
+    print(f"Error máximo en archivo 1: {max_error1:.2f} metros")
+    print(f"Error máximo en archivo 2: {max_error2:.2f} metros")
+    print("-" * 50)
+    print(f"Rotación final en archivo 1: {np.degrees(vo1.current_yaw):.2f} grados")
+    print(f"Rotación final en archivo 2: {np.degrees(vo2.current_yaw):.2f} grados")
+    print("-" * 50)
+    print(f"Distancia recorrida en archivo 1: {sum(np.linalg.norm(np.array(vo1.position_history[i+1]) - np.array(vo1.position_history[i])) for i in range(len(vo1.position_history)-1)):.2f} metros")
+    print(f"Distancia recorrida en archivo 2: {sum(np.linalg.norm(np.array(vo2.position_history[i+1]) - np.array(vo2.position_history[i])) for i in range(len(vo2.position_history)-1)):.2f} metros")
+    print("=" * 50)
+    
+    # Graficar comparación
+    plt.figure(figsize=(12, 10))
+    
+    # Graficar los puntos estimados del primer archivo
+    plt.scatter(positions1[:, 0], positions1[:, 1], color='blue', s=50, label=f'Posiciones de {filename1}')
+    
+    # Graficar los puntos estimados del segundo archivo
+    plt.scatter(positions2[:, 0], positions2[:, 1], color='green', s=50, label=f'Posiciones de {filename2}')
+    
+    # Graficar el ground truth
+    plt.scatter(ground_truth[:, 0], ground_truth[:, 1], color='red', s=50, label='Ground Truth')
+    
+    # Configurar el gráfico
+    plt.grid(True)
+    plt.xlabel('X (metros)')
+    plt.ylabel('Y (metros)')
+    plt.title('Comparación de Trayectorias')
+    plt.legend()
+    plt.axis('equal')  # Mantener la escala igual en ambos ejes
+    plt.show()
+
 # Ejemplo de uso con simulación de rotaciones
 def main():
     # Parámetros de la cámara (estos deberían obtenerse mediante calibración)
@@ -443,101 +852,72 @@ def main():
         'b6': np.array([63.1, 6.4, 210])
     }
     
-    # Crear sistema de odometría visual
-    vo = VisualOdometry(camera_matrix, dist_coeffs, beacon_positions)
-    
-    # Simulación de detecciones de balizas en diferentes fotogramas
-    detections = {
-        # Frame 1: Posición inicial
-        1: {
-            'b5': np.array([473, 185]),
-            'b6': np.array([336, 162])
-        },
-        # Frame 2: Desplazamiento sin rotación
-        2: {
-            'b5': np.array([476, 258]),
-            'b6': np.array([340, 238])
-        },
-        # Frame 3: Desplazamiento con rotación de 15 grados
-        3: {
-            'b5': np.array([469, 326]),  # Rotado
-            'b6': np.array([336, 306])  # Rotado
-        },
-        # Frame 4: Solo dos balizas visibles con más rotación
-        4: {
-            'b5': np.array([503, 339]),  # Rotado más
-            'b6': np.array([378, 389])   # Rotado más
-        },
-        # Frame 5: Desplazamiento sin rotación
-        5: {
-            'b5': np.array([546, 341]),
-            'b6': np.array([459, 436])
-        },
-        # Frame 6: Desplazamiento sin rotación
-        6: {
-            'b5': np.array([591, 312]),
-            'b6': np.array([565, 431])
-        },
-        # Frame 7: Desplazamiento con rotación de 15 grados
-        7: {
-            'b5': np.array([613, 266]),  # Rotado
-            'b6': np.array([646, 373])  # Rotado
-        },
-        # Frame 8: Solo dos balizas visibles con más rotación
-        8: {
-            'b5': np.array([609, 215]),  # Rotado más
-            'b6': np.array([688, 283])   # Rotado más
-        },
-        # Frame 9: Desplazamiento con rotación de 15 grados
-        9: {
-            'b5': np.array([590, 173]),  # Rotado
-            'b6': np.array([691, 186])  # Rotado
-        },
-        # Frame 10: Solo dos balizas visibles con más rotación
-        10: {
-            'b5': np.array([586, 223]),  # Rotado más
-            'b6': np.array([689, 220])   # Rotado más
-        },
-        # Frame 11: Desplazamiento sin rotación
-        11: {
-            'b5': np.array([578, 289]),
-            'b6': np.array([682, 284])
-        },
-        # Frame 12: Desplazamiento con rotación de 15 grados
-        12: {
-            'b5': np.array([580, 357]),  # Rotado
-            'b6': np.array([683, 345])  # Rotado
-        },
-        # Frame 13: Solo dos balizas visibles con más rotación
-        13: {
-            'b5': np.array([576, 408]),  # Rotado más
-            'b6': np.array([677, 391])   # Rotado más
-        }
-    }
-    
-    # Procesar las detecciones
-    for frame, beacons in detections.items():
-        print(f"\nProcesando Frame {frame}:")
-        print("-" * 50)
-        position = vo.update_position(beacons)
-        print(f"Posición estimada: {position}")
-        print(f"Orientación (grados): {np.degrees(vo.current_yaw):.2f}")
-        print(f"Balizas visibles: {list(beacons.keys())}")
-        print("-" * 50)
 
-    # Graficar la trayectoria
-    print("\nGenerando gráfica de la trayectoria...")
-    vo.plot_trajectory()
-    
-    # Mostrar resumen final
-    print("\nResumen del movimiento:")
-    print(f"Posición inicial: {vo.position_history[0]}")
-    print(f"Posición final: {vo.position_history[-1]}")
-    print(f"Distancia total recorrida: {sum(np.linalg.norm(np.array(vo.position_history[i+1]) - np.array(vo.position_history[i])) for i in range(len(vo.position_history)-1)):.2f} metros")
-    print(f"Rotación total: {np.degrees(vo.current_yaw):.2f} grados")
+    # Definir los puntos de ground truth con coordenadas X e Y intercambiadas[30.25, 5.8],
+    ground_truth = np.array([
+         [30.2, 35.7], [30.05, 65.8], [29.75, 96], [37.55, 125.95],
+        [59, 148.6], [88.5, 157.2], [118.95, 149.55], [140.6, 128.05],
+        [149, 97.3], [149, 67.4], [148.65, 37.3], [148.4, 7.4], [148.5, -22.6]
+    ])
 
-    # Graficar el camino de las luces
-    vo.plot_beacon_paths()
+    # Fichero de detecciones
+    csv_filename1 = "beacon_detections_01.csv"
+    csv_filename2 = "beacon_detections.csv"
+    
+    # Verificar si existe el segundo archivo CSV
+    if not os.path.exists(csv_filename2):
+        print(f"ADVERTENCIA: El archivo {csv_filename2} no existe. Por favor, créalo manualmente o modifica el código para generarlo.")
+    
+    # Procesar detecciones desde ambos archivos CSV
+    print(f"\nProcesando detecciones desde {csv_filename1}...")
+    vo1, detections1 = process_detections_from_csv(csv_filename1, camera_matrix, dist_coeffs, beacon_positions, ground_truth)
+        
+    #print(f"\nProcesando detecciones desde {csv_filename2}...")
+    #vo2, detections2 = process_detections_from_csv(csv_filename2, camera_matrix, dist_coeffs, beacon_positions, ground_truth)
+    
+    # Comparar resultados
+    """
+    if vo1 is not None and vo2 is not None:
+        compare_results(vo1, vo2, csv_filename1, csv_filename2, ground_truth)
+    else:
+        if vo1 is not None:
+            # Mostrar resultados del primer archivo
+            print("\nGenerando gráfica de la trayectoria para", csv_filename1)
+            vo1.plot_trajectory()
+            
+            # Mostrar resumen final
+            print("\nResumen del movimiento para", csv_filename1)
+            print(f"Posición inicial: {vo1.position_history[0]}")
+            print(f"Posición final: {vo1.position_history[-1]}")
+            print(f"Distancia total recorrida: {sum(np.linalg.norm(np.array(vo1.position_history[i+1]) - np.array(vo1.position_history[i])) for i in range(len(vo1.position_history)-1)):.2f} metros")
+            print(f"Rotación total: {np.degrees(vo1.current_yaw):.2f} grados")
+            
+            # Graficar el camino de las luces
+            vo1.plot_beacon_paths()
+            
+            # Graficar el historial de deltas
+            print("\nGenerando gráficas del historial de deltas...")
+            vo1.plot_deltas_history()
+        
+        if vo2 is not None:
+            # Mostrar resultados del segundo archivo
+            print("\nGenerando gráfica de la trayectoria para", csv_filename2)
+            vo2.plot_trajectory()
+            
+            # Mostrar resumen final
+            print("\nResumen del movimiento para", csv_filename2)
+            print(f"Posición inicial: {vo2.position_history[0]}")
+            print(f"Posición final: {vo2.position_history[-1]}")
+            print(f"Distancia total recorrida: {sum(np.linalg.norm(np.array(vo2.position_history[i+1]) - np.array(vo2.position_history[i])) for i in range(len(vo2.position_history)-1)):.2f} metros")
+            print(f"Rotación total: {np.degrees(vo2.current_yaw):.2f} grados")
+            
+            # Graficar el camino de las luces
+            vo2.plot_beacon_paths()
+            
+            # Graficar el historial de deltas
+            print("\nGenerando gráficas del historial de deltas...")
+            vo2.plot_deltas_history()
+            """
 
 if __name__ == "__main__":
     main()
