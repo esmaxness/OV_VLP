@@ -36,7 +36,6 @@ class VisualOdometry:
         
         # Histórico de posiciones de la cámara
         self.position_history = [(30, 35.5)]  # Inicializar con la posición inicial
-        self.position_history_no_undistort = [(30, 35.5)]  # Para comparación sin corrección
 
     # Calcular el desplazamiento en el mundo real
     def calculate_displacement(self, delta_x, delta_y, fx, fy, height):
@@ -100,7 +99,7 @@ class VisualOdometry:
         print(f"Delta_Y en el mundo real:{deltas[1]}")
 
         if abs(self.current_yaw) > np.radians(190):
-            deltas[1] = -deltas[1]
+            #deltas[1] = -deltas[1]
             #deltas[0] = -deltas[0]
             print("Invirtiendo signo del componente Y debido a rotación > 190 grados")
             print(f"Delta_Y en el mundo real invertido:{deltas[1]}")
@@ -112,29 +111,26 @@ class VisualOdometry:
 
         return np.array([new_position_x, new_position_y])
     
-    def process_beacon_detection(self, beacon_id, pixel_position, use_undistort=True):
+    def process_beacon_detection(self, beacon_id, pixel_position):
         """
         Procesa la detección de una baliza y actualiza la posición.
         
         Args:
             beacon_id: Identificador de la baliza
             pixel_position: Posición en píxeles [u, v] de la baliza en la imagen actual
-            use_undistort: Si True, aplica corrección de distorsión
             
         Returns:
             bool: True si se pudo actualizar la posición, False en caso contrario
         """
         self.frame_count += 1
         
-        # Aplicar corrección de distorsión si corresponde
-        if use_undistort:
-            undistorted_position = self.undistort_point(pixel_position)
-            processed_position = np.array([
-                undistorted_position[0] * self.camera_matrix[0, 0] + self.camera_matrix[0, 2],
-                undistorted_position[1] * self.camera_matrix[1, 1] + self.camera_matrix[1, 2]
-            ])
-        else:
-            processed_position = pixel_position
+        # Aplicar corrección de distorsión al punto detectado
+        undistorted_position = self.undistort_point(pixel_position)
+        # Convertir el punto undistorted normalizado a coordenadas de píxel
+        undistorted_pixel = np.array([
+            undistorted_position[0] * self.camera_matrix[0, 0] + self.camera_matrix[0, 2],
+            undistorted_position[1] * self.camera_matrix[1, 1] + self.camera_matrix[1, 2]
+        ])
         
         # Inicializar historial para esta baliza si es nueva
         if beacon_id not in self.beacon_pixel_history:
@@ -144,7 +140,7 @@ class VisualOdometry:
         # Almacenar detección con el punto corregido
         self.beacon_pixel_history[beacon_id].append({
             'frame': self.frame_count,
-            'pixel_pos': processed_position,  # Guardar la posición corregida
+            'pixel_pos': undistorted_pixel,  # Guardar la posición corregida
             'original_pos': pixel_position  # Guardar también la posición original para referencia
         })
         
@@ -168,12 +164,11 @@ class VisualOdometry:
         
         return angulo_rotacion
     
-    def estimate_rotation_from_multiple_beacons(self, beacon_detections, use_undistort=True):
+    def estimate_rotation_from_multiple_beacons(self, beacon_detections):
         """
         Estima la rotación en el plano Z usando múltiples balizas.
         Args:
             beacon_detections: Diccionario {id_baliza: posición_píxel} de las balizas detectadas
-            use_undistort: Si True, aplica corrección de distorsión
         Returns:
             float: Ángulo de rotación estimado en radianes, None si no se puede estimar
         """
@@ -272,18 +267,17 @@ class VisualOdometry:
 
         return deltas
     
-    def process_multiple_beacons(self, beacon_detections, use_undistort=True):
+    def process_multiple_beacons(self, beacon_detections):
         """
         Procesa múltiples detecciones de balizas y combina sus estimaciones.
         Args:
             beacon_detections: Diccionario {id_baliza: posición_píxel} de las balizas detectadas
-            use_undistort: Si True, aplica corrección de distorsión
         Returns:
             bool: True si se pudo actualizar la posición, False en caso contrario
         """
         
         # Primero, estimar rotación si es posible
-        rotation_delta = self.estimate_rotation_from_multiple_beacons(beacon_detections, use_undistort)
+        rotation_delta = self.estimate_rotation_from_multiple_beacons(beacon_detections)
         self.last_rotation_delta = rotation_delta
         
         if rotation_delta is not None:
@@ -297,7 +291,7 @@ class VisualOdometry:
         position_updates = []
         
         for beacon_id, pixel_pos in beacon_detections.items():
-            deltas = self.process_beacon_detection(beacon_id, pixel_pos, use_undistort)
+            deltas = self.process_beacon_detection(beacon_id, pixel_pos)
             if deltas is not None:
                 # Corregir el desplazamiento con la última rotación estimada
                 deltas_rotados = self.current_rotation @ deltas
@@ -310,10 +304,8 @@ class VisualOdometry:
             avg_position = np.mean(position_updates, axis=0)
             print(avg_position)
             self.current_position = avg_position
-            if use_undistort:
-                self.position_history.append(tuple(avg_position))
-            else:
-                self.position_history_no_undistort.append(tuple(avg_position))
+            # Guardar la nueva posición en el histórico
+            self.position_history.append(tuple(avg_position))
             return True
         
         return False
@@ -442,63 +434,6 @@ class VisualOdometry:
         plt.axis('equal')
         plt.show()
 
-    def plot_position_errors(self, ground_truth):
-        """
-        Grafica la comparación de errores entre las estimaciones con y sin corrección de distorsión.
-        
-        Args:
-            ground_truth: Array numpy con las posiciones de ground truth
-        """
-        # Convertir históricos a arrays numpy
-        positions_undistort = np.array(self.position_history)
-        positions_no_undistort = np.array(self.position_history_no_undistort)
-        
-        # Calcular errores para cada frame
-        errors_undistort = []
-        errors_no_undistort = []
-        
-        min_len = min(len(positions_undistort), len(positions_no_undistort), len(ground_truth))
-        frames = range(min_len)
-        
-        for i in range(min_len):
-            error_undistort = np.linalg.norm(positions_undistort[i] - ground_truth[i])
-            error_no_undistort = np.linalg.norm(positions_no_undistort[i] - ground_truth[i])
-            errors_undistort.append(error_undistort)
-            errors_no_undistort.append(error_no_undistort)
-        
-        # Crear gráfico de comparación
-        plt.figure(figsize=(12, 8))
-        
-        # Graficar errores
-        plt.plot(frames, errors_undistort, 'b-', linewidth=2, label='Con corrección de distorsión')
-        plt.plot(frames, errors_no_undistort, 'r--', linewidth=2, label='Sin corrección de distorsión')
-        
-        # Calcular y mostrar estadísticas
-        avg_error_undistort = np.mean(errors_undistort)
-        avg_error_no_undistort = np.mean(errors_no_undistort)
-        max_error_undistort = np.max(errors_undistort)
-        max_error_no_undistort = np.max(errors_no_undistort)
-        
-        plt.axhline(y=avg_error_undistort, color='b', linestyle=':', alpha=0.5,
-                   label=f'Error promedio con corrección: {avg_error_undistort:.2f} cm')
-        plt.axhline(y=avg_error_no_undistort, color='r', linestyle=':', alpha=0.5,
-                   label=f'Error promedio sin corrección: {avg_error_no_undistort:.2f} cm')
-        
-        # Configurar gráfico
-        plt.grid(True)
-        plt.xlabel('Número de Frame')
-        plt.ylabel('Error de Posición (cm)')
-        plt.title('Comparación de Errores de Posición')
-        plt.legend()
-        
-        # Mostrar estadísticas en texto
-        plt.text(0.02, 0.98, f'Error máximo con corrección: {max_error_undistort:.2f} cm\n' +
-                f'Error máximo sin corrección: {max_error_no_undistort:.2f} cm',
-                transform=plt.gca().transAxes, verticalalignment='top',
-                bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
-        
-        plt.show()
-
 # Ejemplo de uso con simulación de rotaciones
 def main():
     # Parámetros de la cámara (estos deberían obtenerse mediante calibración)
@@ -612,13 +547,6 @@ def main():
 
     # Graficar el camino de las luces
     vo.plot_beacon_paths()
-
-    # Mostrar gráfico de errores
-    vo.plot_position_errors(np.array([
-        [30.25, 5.8], [30.2, 35.7], [30.05, 65.8], [29.75, 96], [37.55, 125.95],
-        [59, 148.6], [88.5, 157.2], [118.95, 149.55], [140.6, 128.05],
-        [149, 97.3], [149, 67.4], [148.65, 37.3], [148.4, 7.4], [148.5, -22.6]
-    ]))
 
 if __name__ == "__main__":
     main()
