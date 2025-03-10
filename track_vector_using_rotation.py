@@ -99,7 +99,7 @@ class VisualOdometry:
         print(f"Delta_Y en el mundo real:{deltas[1]}")
 
         if abs(self.current_yaw) > np.radians(190):
-            deltas[1] = -deltas[1]
+            #deltas[1] = -deltas[1]
             #deltas[0] = -deltas[0]
             print("Invirtiendo signo del componente Y debido a rotación > 190 grados")
             print(f"Delta_Y en el mundo real invertido:{deltas[1]}")
@@ -124,32 +124,32 @@ class VisualOdometry:
         """
         self.frame_count += 1
         
+        # Aplicar corrección de distorsión al punto detectado
+        undistorted_position = self.undistort_point(pixel_position)
+        # Convertir el punto undistorted normalizado a coordenadas de píxel
+        undistorted_pixel = np.array([
+            undistorted_position[0] * self.camera_matrix[0, 0] + self.camera_matrix[0, 2],
+            undistorted_position[1] * self.camera_matrix[1, 1] + self.camera_matrix[1, 2]
+        ])
+        
         # Inicializar historial para esta baliza si es nueva
         if beacon_id not in self.beacon_pixel_history:
             self.beacon_pixel_history[beacon_id] = []
             self.last_frame_seen[beacon_id] = -1 
         
-        # Almacenar detección
+        # Almacenar detección con el punto corregido
         self.beacon_pixel_history[beacon_id].append({
             'frame': self.frame_count,
-            'pixel_pos': pixel_position
+            'pixel_pos': undistorted_pixel,  # Guardar la posición corregida
+            'original_pos': pixel_position  # Guardar también la posición original para referencia
         })
         
         # Actualizar último frame en que se vio esta baliza
         self.last_frame_seen[beacon_id] = self.frame_count
-
- 
         
         # Si tenemos al menos dos detecciones para esta baliza, podemos estimar el movimiento
         if len(self.beacon_pixel_history[beacon_id]) >= 2:
-
             return self.estimate_motion_from_beacon(beacon_id)
-
-            #deltas = self.estimate_motion_from_beacon(beacon_id)
-            #move_variation.append(deltas)
-
-        #if self.estima_real_position(deltas):
-            #return True
 
         return None
 
@@ -404,23 +404,32 @@ class VisualOdometry:
 
     def plot_beacon_paths(self):
         """
-        Grafica el camino recorrido por las luces b5 y b6.
+        Grafica el camino recorrido por las luces b5 y b6, mostrando tanto los puntos originales como los corregidos.
         """
-        plt.figure(figsize=(10, 8))
+        plt.figure(figsize=(12, 10))
         
         # Graficar el camino de cada baliza
         for beacon_id in ['b5', 'b6']:
             if beacon_id in self.beacon_pixel_history:
-                # Extraer las posiciones de píxeles de la historia
-                pixel_positions = np.array([entry['pixel_pos'] for entry in self.beacon_pixel_history[beacon_id]])
-                plt.plot(pixel_positions[:, 0], pixel_positions[:, 1], label=f'Camino {beacon_id}')
-                plt.scatter(pixel_positions[:, 0], pixel_positions[:, 1], s=50, alpha=0.5)
+                # Extraer las posiciones de píxeles originales y corregidas de la historia
+                original_positions = np.array([entry['original_pos'] for entry in self.beacon_pixel_history[beacon_id]])
+                corrected_positions = np.array([entry['pixel_pos'] for entry in self.beacon_pixel_history[beacon_id]])
+                
+                # Graficar puntos originales
+                plt.plot(original_positions[:, 0], original_positions[:, 1], '--', 
+                        label=f'Camino original {beacon_id}', alpha=0.5)
+                plt.scatter(original_positions[:, 0], original_positions[:, 1], s=50, alpha=0.3)
+                
+                # Graficar puntos corregidos
+                plt.plot(corrected_positions[:, 0], corrected_positions[:, 1], '-', 
+                        label=f'Camino corregido {beacon_id}')
+                plt.scatter(corrected_positions[:, 0], corrected_positions[:, 1], s=50, alpha=0.7)
         
         # Configurar el gráfico
         plt.grid(True)
         plt.xlabel('u (píxeles)')
         plt.ylabel('v (píxeles)')
-        plt.title('Camino Recorrido por las Luces')
+        plt.title('Camino Recorrido por las Luces (Original vs Corregido)')
         plt.legend()
         plt.axis('equal')
         plt.show()
