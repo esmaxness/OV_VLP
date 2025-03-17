@@ -1,5 +1,5 @@
 from VO_VLP import VisualOdometry
-from Utils import process_detection_from_csv
+from Utils import process_detection_from_csv, compare_results
 
 
 # Ejemplo de uso con simulación de rotaciones

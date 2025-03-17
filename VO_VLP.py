@@ -23,7 +23,7 @@ class VisualOdometry:
         self.beacon_world_positions = beacon_world_positions
         
         # Posición y orientación actual del AGV
-        self.current_position = (30.20, 35.7) #-53.80,29.95(30.20, 35.7)  # [x, y, z]
+        self.current_position = (29.85,-23.9) #-53.80,29.95(30.20, 35.7)  # [x, y, z]
         # Inicializar con rotación de 0 grados (sin rotación)
         self.current_rotation = np.array([[1, 0], [0, 1]])  # 0 grados (matriz identidad)
         self.current_yaw = 0  # 0 grados en radianes
@@ -45,7 +45,7 @@ class VisualOdometry:
         self.frame_count = 0
         
         # Histórico de posiciones de la cámara
-        self.position_history = [30.20, 35.7]  # Inicializar con la posición inicial
+        self.position_history = [(29.85,-23.9)]  # Inicializar con la posición inicial
         self.yaw_history = [0]  # Inicializamos el historial de yaw
 
     # Calcular el desplazamiento en el mundo real

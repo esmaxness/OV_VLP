@@ -1,6 +1,6 @@
 from VO_VLP import VisualOdometry
 from Utils import process_dynamic_test
-import matplotlib as plt
+import matplotlib.pyplot as plt
 import numpy as np
 
 def main():
@@ -31,7 +31,7 @@ def main():
     ])
 
     # Procesar el nuevo formato de CSV
-    new_csv_filename = "slow_test.csv"  # Ajusta esto al nombre de tu archivo
+    new_csv_filename = "slow_test_short.csv"  # Ajusta esto al nombre de tu archivo
     print(f"\nProcesando detecciones desde {new_csv_filename}...")
     
     # Cargar y procesar las detecciones del nuevo formato
@@ -58,7 +58,11 @@ def main():
     plt.figure(figsize=(10, 8))
     
     # Graficar las posiciones estimadas
+    #print(f"{vo.position_history}")
+    print(f"Shape of array: {np.array(vo.position_history).shape}")
+
     estimated_positions = np.array(vo.position_history)
+
     plt.scatter(estimated_positions[:, 0], estimated_positions[:, 1], color='blue', s=50, label='Posiciones estimadas')
     
     # Graficar el ground truth
