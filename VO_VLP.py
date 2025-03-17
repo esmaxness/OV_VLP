@@ -171,6 +171,70 @@ class VisualOdometry:
         angulo_rotacion = math.degrees(angulo_t2 - angulo_t1)
         
         return angulo_rotacion
+    
+    def estimate_rotation_from_multiple_beacons(self, beacon_detections):
+        """
+        Estima la rotación en el plano Z usando múltiples balizas.
+        Args:
+            beacon_detections: Diccionario {id_baliza: posición_píxel} de las balizas detectadas
+        Returns:
+            float: Ángulo de rotación estimado en radianes, None si no se puede estimar
+        """
+        if len(beacon_detections) < 2:
+            return None
+        
+        rotation_estimates = []
+
+        
+        # Calcular vectores entre pares de balizas en el frame actual
+        beacon_ids = list(beacon_detections.keys())
+        for i in range(len(beacon_ids)):
+            for j in range(i+1, len(beacon_ids)):
+                id1, id2 = beacon_ids[i], beacon_ids[j]
+                
+                # Verificar que tenemos histórico para ambas balizas
+                if (id1 in self.beacon_pixel_history and id2 in self.beacon_pixel_history and
+                    len(self.beacon_pixel_history[id1]) >= 1 and len(self.beacon_pixel_history[id2]) >= 1):
+                    
+                    # Obtener direcciones actuales
+                    curr_vec1 = beacon_detections[id1]
+                    curr_vec2 = beacon_detections[id2]
+                    
+                    # Obtener direcciones previas
+                    prev_vec1 = self.beacon_pixel_history[id1][-1]['pixel_pos']
+                    prev_vec2 = self.beacon_pixel_history[id2][-1]['pixel_pos']
+                    
+                    # Proyectar los rayos en el plano XY para obtener la rotación en Z
+                    prev_vec = np.array([prev_vec2[0] - prev_vec1[0], prev_vec2[1] - prev_vec1[1]])
+                    curr_vec = np.array([curr_vec2[0] - curr_vec1[0], curr_vec2[1] - curr_vec1[1]])
+
+                    #print(f"prev_vec: {prev_vec}, curr_vec: {curr_vec}")
+
+                    angle1 = self.calcular_rotacion(prev_vec1, prev_vec2, curr_vec1, curr_vec2)
+                    #print(f"Estimador simple: {angle1}")
+                    
+                    # Normalizar vectores
+                    if np.linalg.norm(prev_vec) > 1e-6 and np.linalg.norm(curr_vec) > 1e-6:
+                        prev_vec = prev_vec / np.linalg.norm(prev_vec)
+                        curr_vec = curr_vec / np.linalg.norm(curr_vec)
+                        
+                        # Calcular el ángulo entre los vectores (usando el producto cruz y punto)
+                        dot_product = np.clip(np.dot(prev_vec, curr_vec), -1.0, 1.0)
+                        cross_product = np.cross(np.append(prev_vec, 0), np.append(curr_vec, 0))[2]
+                        
+                        angle = np.arccos(dot_product)
+                        #print(f"dot_product: {dot_product}, cross_product: {cross_product}, angle: {angle}")
+                        # Obtiene la direcciónd el vector 
+                        if cross_product < 0:
+                            angle = -angle
+                        
+                        rotation_estimates.append(angle)
+        
+        if rotation_estimates:
+            # Usar la mediana para mayor robustez ante valores atípicos
+            return np.median(rotation_estimates)
+        
+        return None
 
     def process_multiple_beacons(self, beacon_detections):
         """
