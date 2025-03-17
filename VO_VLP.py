@@ -1,7 +1,12 @@
+
+
 import numpy as np
 import cv2
 from scipy.spatial.transform import Rotation
 import math
+import matplotlib.pyplot as plt
+import csv
+import os
 
 class VisualOdometry:
     def __init__(self, camera_matrix, dist_coeffs, beacon_world_positions):
@@ -144,7 +149,9 @@ class VisualOdometry:
             self.beacon_pixel_history[beacon_id] = []
             self.last_frame_seen[beacon_id] = self.frame_count 
             print(f"Baliza {beacon_id} detectada por primera vez en el frame {self.frame_count}")
-        
+
+        print(f"Pixel position: {pixel_position}")
+        print(f"Undistorted pixel: {undistorted_pixel}")
         # Almacenar detección con el punto corregido
         self.beacon_pixel_history[beacon_id].append({
             'frame': self.frame_count,
@@ -223,11 +230,11 @@ class VisualOdometry:
                         cross_product = np.cross(np.append(prev_vec, 0), np.append(curr_vec, 0))[2]
                         
                         angle = np.arccos(dot_product)
-                        #print(f"dot_product: {dot_product}, cross_product: {cross_product}, angle: {angle}")
+                        
                         # Obtiene la direcciónd el vector 
                         if cross_product < 0:
                             angle = -angle
-                        
+
                         rotation_estimates.append(angle)
         
         if rotation_estimates:
@@ -235,7 +242,46 @@ class VisualOdometry:
             return np.median(rotation_estimates)
         
         return None
+    
+    def update_rotation_matrix(self, yaw_angle):
+        """
+        Actualiza la matriz de rotación basada en el ángulo de giro en Z.
+        
+        Args:
+            yaw_angle: Ángulo de giro en radianes
+        """
+        # Crear matriz de rotación alrededor del eje Z
+        cos_yaw = np.cos(yaw_angle)
+        sin_yaw = np.sin(yaw_angle)
+        
+        self.current_rotation = np.array([
+            [cos_yaw, sin_yaw],
+            [-sin_yaw, cos_yaw]
+        ])
 
+    def estimate_motion_from_beacon(self, beacon_id):
+        """
+        Estima el movimiento del AGV basado en las detecciones de una baliza.
+        
+        Args:
+            beacon_id: Identificador de la baliza
+            
+        Returns:
+            bool: True si se pudo estimar el movimiento, False en caso contrario
+        """
+        # Obtener las dos últimas detecciones
+        current = self.beacon_pixel_history[beacon_id][-1]
+        previous = self.beacon_pixel_history[beacon_id][-2]
+
+        #print(previous['pixel_pos'])
+        
+        # Vector dirección anterior y actual
+        #prev_ray = previous['ray_direction']
+        #curr_ray = current['ray_direction']
+        deltas = self.calculate_vector_movement(previous['pixel_pos'], current['pixel_pos'])
+
+        return deltas
+    
     def process_multiple_beacons(self, beacon_detections):
         """
         Procesa múltiples detecciones de balizas y combina sus estimaciones.
@@ -522,4 +568,4 @@ class VisualOdometry:
         plt.ylabel('Magnitud del Desplazamiento (metros)')
         plt.grid(True)
         plt.axhline(y=0, color='black', linestyle='-', alpha=0.3)
-        plt.show() 
+        plt.show()
