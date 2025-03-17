@@ -1,8 +1,5 @@
-import numpy as np
-import cv2
-from scipy.spatial.transform import Rotation
-import math
 from VO_VLP import VisualOdometry
+from Utils import process_detection_from_csv
 
 
 # Ejemplo de uso con simulación de rotaciones
@@ -19,105 +16,80 @@ def main():
     
     # Posiciones 3D de las balizas (luces) en el techo en metros
     beacon_positions = {
-        'b5': np.array([62.7, 65.0, 210]),
-        'b6': np.array([63.1, 6.4, 210])
+        'b5': np.array([65.0, 62.7, 210]),
+        'b6': np.array([6.4, 63.1, 210]),
+        #'b7': np.array([61.9, 123, 210])#,
+        #'b8': np.array([5.2, 124, 210])
+        
     }
     
-    # Crear sistema de odometría visual
-    vo = VisualOdometry(camera_matrix, dist_coeffs, beacon_positions)
-    
-    # Simulación de detecciones de balizas en diferentes fotogramas
-    detections = {
-        # Frame 1: Posición inicial
-        1: {
-            'b5': np.array([473, 185]),
-            'b6': np.array([336, 162])
-        },
-        # Frame 2: Desplazamiento sin rotación
-        2: {
-            'b5': np.array([476, 258]),
-            'b6': np.array([340, 238])
-        },
-        # Frame 3: Desplazamiento con rotación de 15 grados
-        3: {
-            'b5': np.array([469, 326]),  # Rotado
-            'b6': np.array([336, 306])  # Rotado
-        },
-        # Frame 4: Solo dos balizas visibles con más rotación
-        4: {
-            'b5': np.array([503, 339]),  # Rotado más
-            'b6': np.array([378, 389])   # Rotado más
-        },
-        # Frame 5: Desplazamiento sin rotación
-        5: {
-            'b5': np.array([546, 341]),
-            'b6': np.array([459, 436])
-        },
-        # Frame 6: Desplazamiento sin rotación
-        6: {
-            'b5': np.array([591, 312]),
-            'b6': np.array([565, 431])
-        },
-        # Frame 7: Desplazamiento con rotación de 15 grados
-        7: {
-            'b5': np.array([613, 266]),  # Rotado
-            'b6': np.array([646, 373])  # Rotado
-        },
-        # Frame 8: Solo dos balizas visibles con más rotación
-        8: {
-            'b5': np.array([609, 215]),  # Rotado más
-            'b6': np.array([688, 283])   # Rotado más
-        },
-        # Frame 9: Desplazamiento con rotación de 15 grados
-        9: {
-            'b5': np.array([590, 173]),  # Rotado
-            'b6': np.array([691, 186])  # Rotado
-        },
-        # Frame 10: Solo dos balizas visibles con más rotación
-        10: {
-            'b5': np.array([586, 223]),  # Rotado más
-            'b6': np.array([689, 220])   # Rotado más
-        },
-        # Frame 11: Desplazamiento sin rotación
-        11: {
-            'b5': np.array([578, 289]),
-            'b6': np.array([682, 284])
-        },
-        # Frame 12: Desplazamiento con rotación de 15 grados
-        12: {
-            'b5': np.array([580, 357]),  # Rotado
-            'b6': np.array([683, 345])  # Rotado
-        },
-        # Frame 13: Solo dos balizas visibles con más rotación
-        13: {
-            'b5': np.array([576, 408]),  # Rotado más
-            'b6': np.array([677, 391])   # Rotado más
-        }
-    }
-    
-    # Procesar las detecciones
-    for frame, beacons in detections.items():
-        print(f"\nProcesando Frame {frame}:")
-        print("-" * 50)
-        position = vo.update_position(beacons)
-        print(f"Posición estimada: {position}")
-        print(f"Orientación (grados): {np.degrees(vo.current_yaw):.2f}")
-        print(f"Balizas visibles: {list(beacons.keys())}")
-        print("-" * 50)
 
-    # Graficar la trayectoria
-    print("\nGenerando gráfica de la trayectoria...")
-    vo.plot_trajectory()
+    # Definir los puntos de ground truth con coordenadas X e Y intercambiadas[30.25, 5.8],
+    ground_truth = np.array([
+        [29.85,-23.9],[30.25, 5.8],
+        [30.20, 35.7], [30.05, 65.8], [29.75, 96], [37.55, 125.95],
+        [59, 148.6], [88.5, 157.2], [118.95, 149.55], [140.6, 128.05],
+        [149, 97.3], [149, 67.4], [148.65, 37.3], [148.4, 7.4], [148.5, -22.6]#,[148.55, -52.70]
+    ])
+
+    # Fichero de detecciones
+    csv_filename1 = "beacon_detections_01.csv"
+    csv_filename2 = "beacon_detections_02_b5_b6.csv"
+    
+    # Verificar si existe el segundo archivo CSV
+    if not os.path.exists(csv_filename2):
+        print(f"ADVERTENCIA: El archivo {csv_filename2} no existe. Por favor, créalo manualmente o modifica el código para generarlo.")
+    
+    # Procesar detecciones desde ambos archivos CSV
+    #print(f"\nProcesando detecciones desde {csv_filename1}...")
+    #vo1, detections1 = process_detections_from_csv(csv_filename1, camera_matrix, dist_coeffs, beacon_positions, ground_truth)
+        
+    print(f"\nProcesando detecciones desde {csv_filename2}...")
+    vo2, detections2 = process_detections_from_csv(csv_filename2, camera_matrix, dist_coeffs, beacon_positions, ground_truth)
+    
+    # Comparar resultados
+   
+    if vo1 is not None and vo2 is not None:
+        compare_results(vo1, vo2, csv_filename1, csv_filename2, ground_truth)
+    else:
+        if vo1 is not None:
+            # Mostrar resultados del primer archivo
+            print("\nGenerando gráfica de la trayectoria para", csv_filename1)
+            vo1.plot_trajectory()
+            
+            # Mostrar resumen final
+            print("\nResumen del movimiento para", csv_filename1)
+            print(f"Posición inicial: {vo1.position_history[0]}")
+            print(f"Posición final: {vo1.position_history[-1]}")
+            print(f"Distancia total recorrida: {sum(np.linalg.norm(np.array(vo1.position_history[i+1]) - np.array(vo1.position_history[i])) for i in range(len(vo1.position_history)-1)):.2f} metros")
+            print(f"Rotación total: {np.degrees(vo1.current_yaw):.2f} grados")
+            
+            # Graficar el camino de las luces
+            vo1.plot_beacon_paths()
+            
+            # Graficar el historial de deltas
+            print("\nGenerando gráficas del historial de deltas...")
+            vo1.plot_deltas_history()
+        
+        if vo2 is not None:
+            # Mostrar resultados del segundo archivo
+            print("\nGenerando gráfica de la trayectoria para", csv_filename2)
+            vo2.plot_trajectory()
     
     # Mostrar resumen final
-    print("\nResumen del movimiento:")
-    print(f"Posición inicial: {vo.position_history[0]}")
-    print(f"Posición final: {vo.position_history[-1]}")
-    print(f"Distancia total recorrida: {sum(np.linalg.norm(np.array(vo.position_history[i+1]) - np.array(vo.position_history[i])) for i in range(len(vo.position_history)-1)):.2f} metros")
-    print(f"Rotación total: {np.degrees(vo.current_yaw):.2f} grados")
+            print("\nResumen del movimiento para", csv_filename2)
+            print(f"Posición inicial: {vo2.position_history[0]}")
+            print(f"Posición final: {vo2.position_history[-1]}")
+            print(f"Distancia total recorrida: {sum(np.linalg.norm(np.array(vo2.position_history[i+1]) - np.array(vo2.position_history[i])) for i in range(len(vo2.position_history)-1)):.2f} metros")
+            print(f"Rotación total: {np.degrees(vo2.current_yaw):.2f} grados")
 
     # Graficar el camino de las luces
-    vo.plot_beacon_paths()
+            vo2.plot_beacon_paths()
+            
+            # Graficar el historial de deltas
+            print("\nGenerando gráficas del historial de deltas...")
+            vo2.plot_deltas_history()
+            
 
 if __name__ == "__main__":
     main()
