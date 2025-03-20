@@ -1,7 +1,8 @@
-from VO_VLP import VisualOdometry
+from VO_VLP_2 import VisualOdometry
 from Utils import process_dynamic_test
 import matplotlib.pyplot as plt
 import numpy as np
+import csv
 
 def main():
     # Parámetros de la cámara (estos deberían obtenerse mediante calibración)
@@ -24,14 +25,14 @@ def main():
     }
     
     # Definir los puntos de ground truth
-    ground_truth = np.array([[90.60, -113.40], [120.35,-105.55], [141.25,-82.95], [148.55,-52.7], [148.5, -22.6],
-                  [148.4, 7.4],  [148.65, 37.3] , [149, 67.4] , [149, 97.3], [140.6, 128.05], [118.95, 149.55], 
-       [88.5, 157.2],[59, 148.6], [37.55,125.95],[29.75,96],[30.05,65.8],[30.2,35.7],[30.25,5.8],[29.85,-23.9],
-       [29.95,-53.8],[37.85,-83.85],[60.55,-105.60], [90.60,-113.40]
+    ground_truth = np.array([[-113.40,90.60 ], [-105.55,120.35], [-82.95,141.25], [-52.7,148.55], [ -22.6,148.5],
+                  [ 7.4,148.4],  [ 37.3,148.65] , [ 67.4,149] , [ 97.3,149], [ 128.05,140.6], [ 149.55,118.95], 
+       [157.2,88.5],[148.6,59], [125.95,37.55],[96,29.75],[65.8,30.05],[35.7,30.2],[5.8,30.25],[-23.9,29.85],
+       [-53.8,29.95],[-83.85,37.85],[-105.60,60.55], [-113.40,90.60]
     ])
 
     # Procesar el nuevo formato de CSV
-    new_csv_filename = "slow_test_short.csv"  # Ajusta esto al nombre de tu archivo
+    new_csv_filename = "slow_test.csv"  # Ajusta esto al nombre de tu archivo
     print(f"\nProcesando detecciones desde {new_csv_filename}...")
     
     # Cargar y procesar las detecciones del nuevo formato
@@ -43,9 +44,11 @@ def main():
     
     # Crear sistema de odometría visual
     vo = VisualOdometry(camera_matrix, dist_coeffs, beacon_positions)
-    
+
+        
     # Procesar cada frame de detecciones
     for frame, beacons in detections.items():
+
         print(f"\nProcesando Frame {frame}:")
         print("-" * 50)
         position = vo.update_position(beacons)
@@ -53,6 +56,7 @@ def main():
         print(f"Orientación (grados): {np.degrees(vo.current_yaw):.2f}")
         print(f"Balizas visibles: {list(beacons.keys())}")
         print("-" * 50)
+          
 
     # Generar gráfico de posiciones estimadas y ground truth
     plt.figure(figsize=(10, 8))
